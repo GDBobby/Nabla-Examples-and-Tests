@@ -9,7 +9,7 @@
 #include <assert.h>
 #include <nabla.h>
 
-#include <nbl/builtin/hlsl/cmath.hlsl>
+#include <nbl/builtin/hlsl/tgmath.hlsl>
 #include <nbl/builtin/hlsl/cpp_compat.hlsl>
 #include <nbl/builtin/hlsl/type_traits.hlsl>
 #include <nbl/builtin/hlsl/mpl.hlsl>
@@ -739,7 +739,6 @@ void cpu_tests()
     TEST_CMATH(sinh, 1, type) \
     TEST_CMATH(tanh, 1, type) \
     TEST_CMATH(acosh, 1, type) \
-    TEST_CMATH(asinh, 1, type) \
     TEST_CMATH(atanh, 1, type) \
     TEST_CMATH(exp, 1, type) \
     TEST_CMATHT(frexp, int, 1, type) \
@@ -750,19 +749,13 @@ void cpu_tests()
     TEST_CMATH(exp2, 1, type) \
     TEST_CMATH(log2, 1, type) \
     TEST_CMATH(logb, 1, type) \
-    TEST_CMATH(expm1, 1, type) \
     TEST_CMATH(log1p, 1, type) \
     TEST_CMATH(ilogb, 1, type) \
     TEST_CMATH(scalbn, 2, type) \
     TEST_CMATH(pow, 2, type) \
     TEST_CMATH(sqrt, 1, type) \
-    TEST_CMATH(cbrt, 1, type) \
     TEST_CMATH(hypot, 2, type) \
     TEST_CMATH(copysign, 2, type) \
-    TEST_CMATH(erf, 1, type) \
-    TEST_CMATH(erfc, 1, type) \
-    TEST_CMATH(tgamma, 1, type) \
-    TEST_CMATH(lgamma, 1, type) \
     TEST_CMATH(ceil, 1, type) \
     TEST_CMATH(floor, 1, type) \
     TEST_CMATH(fmod, 2, type) \
