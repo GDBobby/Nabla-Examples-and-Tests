@@ -7,8 +7,8 @@ using namespace asset;
 using namespace ui;
 using namespace video;
 
-
 #include "nbl/application_templates/MonoAssetManagerAndBuiltinResourceApplication.hpp"
+
 #include "../common/SimpleWindowedApplication.hpp"
 #include "../common/InputSystem.hpp"
 #include "nbl/video/utilities/CSimpleResizeSurface.h"
@@ -267,7 +267,22 @@ class CSwapchainResources : public ISimpleManagedSurface::ISwapchainResources
 class ComputerAidedDesign final : public examples::SimpleWindowedApplication, public application_templates::MonoAssetManagerAndBuiltinResourceApplication
 {
 	using device_base_t = examples::SimpleWindowedApplication;
+
+	/*
+		note: introduced changes do not impact the example bahaviour at runtime, read below if you want to know some details for todos & improvements
+
+		1) ideally we should have #ifdef NBL_CAD_EX_LIST_BUILTIN_RESOURCES check and if built with builtins enabled for the example we should inherit from `application_templates::MonoAssetManagerAndBuiltinResourceApplication` 
+		otherwise from `examples::SimpleWindowedApplication` ONLY because it already iherits `application_templates::BasicMultiQueueApplication` which inherits `MonoDeviceApplication` 
+		which inherits `MonoSystemMonoLoggerApplication` which inherits `IApplicationFramework` so call to `examples::SimpleWindowedApplication`'s onAppInitialized will mount 
+		all archives & init the required Nabla's minimum to work
+
+		2) I introduced NBL_CAD_EX_LIST_BUILTIN_RESOURCES for CMake and as #define here - if enabled gives you non empty archive with builtins (NSC builts your shaders at *build time* and your spirv is a builtin resource library emded into DLL/exe),
+		otherwise gives you empty archive (and this is how it used to work so far - it has always been empty). The reason why I did not removed this archive when empty (not defined NBL_CAD_EX_LIST_BUILTIN_RESOURCES) is because it will require to update
+		moree code here so I leave it for an intern or somebody :D
+	*/
+
 	using asset_base_t = application_templates::MonoAssetManagerAndBuiltinResourceApplication;
+
 	using clock_t = std::chrono::steady_clock;
 	
 	constexpr static uint32_t WindowWidthRequest = 1600u;
@@ -472,9 +487,10 @@ public:
 		// Remember to call the base class initialization!
 		if (!device_base_t::onAppInitialized(smart_refctd_ptr(system)))
 			return false;
+
 		if (!asset_base_t::onAppInitialized(std::move(system)))
 			return false;
-		
+
 		fragmentShaderInterlockEnabled = m_device->getEnabledFeatures().fragmentShaderPixelInterlock;
 		
 		// Create the Semaphores
@@ -692,10 +708,30 @@ public:
 		// Shaders
 		std::array<smart_refctd_ptr<IGPUShader>, 4u> shaders = {};
 		{
-			constexpr auto vertexShaderPath = "../vertex_shader.hlsl";
-			constexpr auto fragmentShaderPath = "../fragment_shader.hlsl";
-			constexpr auto debugfragmentShaderPath = "../fragment_shader_debug.hlsl";
-			constexpr auto resolveAlphasShaderPath = "../resolve_alphas.hlsl";
+#ifdef NBL_CAD_EX_LIST_BUILTIN_RESOURCES
+			#define vertexShaderPath "../app_resources/vertex_shader.hlsl"
+			#define fragmentShaderPath "../app_resources/fragment_shader.hlsl"
+			#define debugfragmentShaderPath "../app_resources/fragment_shader_debug.hlsl"
+			#define resolveAlphasShaderPath "../app_resources/resolve_alphas.hlsl"
+
+			auto createShader = [&](const system::SBuiltinFile& in, asset::IShader::E_SHADER_STAGE stage) -> core::smart_refctd_ptr<video::IGPUShader>
+			{
+				const auto buffer = core::make_smart_refctd_ptr<asset::CCustomAllocatorCPUBuffer<core::null_allocator<uint8_t>, true> >(in.size, (void*)in.contents, core::adopt_memory); // no copy
+				const auto shader = make_smart_refctd_ptr<ICPUShader>(core::smart_refctd_ptr(buffer), stage, IShader::E_CONTENT_TYPE::ECT_SPIRV, "");
+
+				return m_device->createShader(shader.get());
+			};
+
+			// note you could replace it file getter which uses mounted archive to get it, but I give you even faster solution which returns the builtin directly given template key
+			shaders[0] = createShader(::this_example::builtin::get_resource<vertexShaderPath>(), IShader::E_SHADER_STAGE::ESS_VERTEX);
+			shaders[1] = createShader(::this_example::builtin::get_resource<fragmentShaderPath>(), IShader::E_SHADER_STAGE::ESS_FRAGMENT);
+			shaders[2] = createShader(::this_example::builtin::get_resource<debugfragmentShaderPath>(), IShader::E_SHADER_STAGE::ESS_FRAGMENT);
+			shaders[3] = createShader(::this_example::builtin::get_resource<resolveAlphasShaderPath>(), IShader::E_SHADER_STAGE::ESS_FRAGMENT);
+#else
+			constexpr auto vertexShaderPath = "../app_resources/vertex_shader.hlsl";
+			constexpr auto fragmentShaderPath = "../app_resources/fragment_shader.hlsl";
+			constexpr auto debugfragmentShaderPath = "../app_resources/fragment_shader_debug.hlsl";
+			constexpr auto resolveAlphasShaderPath = "../app_resources/resolve_alphas.hlsl";
 #if defined(SHADER_CACHE_TEST_COMPILATION_CACHE_STORE)
 			
 
@@ -814,6 +850,7 @@ public:
 			shaders[2] = loadCompileAndCreateShader(debugfragmentShaderPath, IShader::E_SHADER_STAGE::ESS_FRAGMENT);
 			shaders[3] = loadCompileAndCreateShader(resolveAlphasShaderPath, IShader::E_SHADER_STAGE::ESS_FRAGMENT);
 #endif
+#endif // NBL_CAD_EX_LIST_BUILTIN_RESOURCES
 		}
 
 		// Shared Blend Params between pipelines

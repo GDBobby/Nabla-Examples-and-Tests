@@ -606,3 +606,7 @@ float4 main(PSInput input) : SV_TARGET
     bool useStyleColor = (objType != ObjectType::IMAGE);
     return calculateFinalColor<nbl::hlsl::jit::device_capabilities::fragmentShaderPixelInterlock>(fragCoord, localAlpha, currentMainObjectIdx, textureColor, useStyleColor);
 }
+
+/*
+	boost wave guard
+*/

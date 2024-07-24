@@ -35,3 +35,7 @@ float4 main(float4 position : SV_Position) : SV_TARGET
 {
     return calculateColor<nbl::hlsl::jit::device_capabilities::fragmentShaderPixelInterlock>(position.xy);
 }
+
+/*
+	boost wave guard
+*/

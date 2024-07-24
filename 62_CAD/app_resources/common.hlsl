@@ -508,3 +508,7 @@ struct PSInput
 #endif
 
 #endif
+
+/*
+	boost wave guard
+*/

@@ -568,3 +568,7 @@ PSInput main(uint vertexID : SV_VertexID)
     outV.clip = float4(outV.position.x - clipProjectionData.minClipNDC.x, outV.position.y - clipProjectionData.minClipNDC.y, clipProjectionData.maxClipNDC.x - outV.position.x, clipProjectionData.maxClipNDC.y - outV.position.y);
     return outV;
 }
+
+/*
+	boost wave guard
+*/
