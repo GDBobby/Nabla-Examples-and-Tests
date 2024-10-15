@@ -1,7 +1,7 @@
 #include "nbl/application_templates/BasicMultiQueueApplication.hpp"
 #include "nbl/application_templates/MonoAssetManagerAndBuiltinResourceApplication.hpp"
 
-#include "app_resources/descriptors.hlsl"
+//#include "app_resources/descriptors.hlsl"
 #include <nbl/builtin/hlsl/central_limit_blur/common.hlsl>
 
 
@@ -86,7 +86,7 @@ public:
     };
 
     auto textureToBlur = checkedLoad.operator()<nbl::asset::ICPUImage>(
-        "../../media/GLI/kueken7_srgb8.png");
+        "app_resources/tex.jpg");
     if (!textureToBlur) {
       return logFail("Failed to load texture!\n");
     }
@@ -110,12 +110,12 @@ public:
       gpuImageCreateInfo.queueFamilyIndexCount = 0u;
       gpuImageCreateInfo.queueFamilyIndices = nullptr;
 
-      gpuImageCreateInfo.format = format;
-      // m_physicalDevice->promoteImageFormat({ inCpuTexInfo.format,
-      // gpuImageCreateInfo.usage }, gpuImageCreateInfo.tiling);
-      // gpuImageCreateInfo.viewFormats.set( E_FORMAT::EF_R8G8B8A8_SRGB );
-      // gpuImageCreateInfo.viewFormats.set( E_FORMAT::EF_R8G8B8A8_UNORM );
+      gpuImageCreateInfo.format = m_physicalDevice->promoteImageFormat({ format, gpuImageCreateInfo.usage }, gpuImageCreateInfo.tiling);
+       //gpuImageCreateInfo.viewFormats.set( E_FORMAT::EF_R8G8B8_SRGB );
+       //gpuImageCreateInfo.viewFormats.set( E_FORMAT::EF_R8G8B8_UNORM );
       auto gpuImage = m_device->createImage(std::move(gpuImageCreateInfo));
+
+      //asset::convertColor(inCpuTexInfo.format, E_FORMAT::EF_R8G8B8_SRGB, 0, 0, {});
 
       auto gpuImageMemReqs = gpuImage->getMemoryReqs();
       gpuImageMemReqs.memoryTypeBits &=
@@ -130,7 +130,7 @@ public:
         createGPUImages(IImage::E_USAGE_FLAGS::EUF_TRANSFER_SRC_BIT |
                             IImage::E_USAGE_FLAGS::EUF_SAMPLED_BIT |
                             IImage::E_USAGE_FLAGS::EUF_STORAGE_BIT,
-                        E_FORMAT::EF_R8G8B8A8_SRGB, "GPU Image");
+                        E_FORMAT::EF_R8G8B8A8_UNORM, "GPU Image");
     const auto &gpuImgParams = gpuImg->getCreationParameters();
 
     smart_refctd_ptr<nbl::video::IGPUImageView> sampledView;
@@ -141,7 +141,7 @@ public:
           .subUsages = IImage::E_USAGE_FLAGS::EUF_SAMPLED_BIT,
           .image = gpuImg,
           .viewType = IGPUImageView::ET_2D,
-          .format = E_FORMAT::EF_R8G8B8A8_SRGB,
+          .format = gpuImgParams.format,
       });
       sampledView->setObjectDebugName("Sampled sRGB view");
 
@@ -177,7 +177,7 @@ public:
     {
       NBL_CONSTEXPR_STATIC nbl::video::IGPUDescriptorSetLayout::SBinding
           bindings[] = {
-              {.binding = inputViewBinding,
+              {.binding = 0, // TODO: ALI
                .type =
                    nbl::asset::IDescriptor::E_TYPE::ET_COMBINED_IMAGE_SAMPLER,
                .createFlags =
@@ -185,7 +185,7 @@ public:
                .stageFlags = IShader::E_SHADER_STAGE::ESS_COMPUTE,
                .count = 1,
                .immutableSamplers = nullptr},
-              {.binding = outputViewBinding,
+              {.binding = 1, // TODO: ALI
                .type = nbl::asset::IDescriptor::E_TYPE::ET_STORAGE_IMAGE,
                .createFlags =
                    IGPUDescriptorSetLayout::SBinding::E_CREATE_FLAGS::ECF_NONE,
@@ -237,12 +237,12 @@ public:
 
       IGPUDescriptorSet::SWriteDescriptorSet writes[] = {
           {.dstSet = ds.get(),
-           .binding = inputViewBinding,
+           .binding = 0, // TODO
            .arrayElement = 0,
            .count = 1,
            .info = &info[0]},
           {.dstSet = ds.get(),
-           .binding = outputViewBinding,
+           .binding = 1, // TODO
            .arrayElement = 0,
            .count = 1,
            .info = &info[1]},
@@ -395,12 +395,9 @@ public:
     }
 
     hlsl::central_limit_blur::BoxBlurParams pushConstData = {
-        .radius = 4.f,
-        .direction = 0,
-        .channelCount = nbl::asset::getFormatChannelCount(gpuImgParams.format),
-        .wrapMode = hlsl::central_limit_blur::WrapMode::WRAP_MODE_CLAMP_TO_EDGE,
-        .borderColorType = hlsl::central_limit_blur::BorderColor::
-            BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+      .flip = 0,
+      .filterDim = 15,
+      .blockDim = 128 - (15 - 1),
     };
 
     cmdbuf->begin(IGPUCommandBuffer::USAGE::ONE_TIME_SUBMIT_BIT);
@@ -445,7 +442,18 @@ public:
                           sizeof(pushConstData), &pushConstData);
 
     for (int j = 0; j < 1; j++) {
-      cmdbuf->dispatch(1, gpuImgParams.extent.height, 1);
+       cmdbuf->dispatch(
+           gpuImgParams.extent.width / (float)pushConstData.blockDim,
+           gpuImgParams.extent.height / 4, // TODO: 4 = batch[1]
+           1
+       );
+       pushConstData.flip = 1;
+       cmdbuf->pushConstants( pplnLayout.get(), IShader::E_SHADER_STAGE::ESS_COMPUTE, 0, sizeof( pushConstData ), &pushConstData );
+       cmdbuf->dispatch(
+           gpuImgParams.extent.height / (float)pushConstData.blockDim,
+           gpuImgParams.extent.width / 4, // TODO: 4 = batch[1]
+           1
+       );
 
       // const nbl::asset::SMemoryBarrier barriers3[] = {
       // 	{
