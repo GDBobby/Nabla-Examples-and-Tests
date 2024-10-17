@@ -30,14 +30,13 @@ public:
         : system::IApplicationFramework(_localInputCWD, _localOutputCWD,
             _sharedInputCWD, _sharedOutputCWD) {}
 
-    bool onAppInitialized(smart_refctd_ptr<ISystem>&& system) override {
+    bool onAppInitialized(smart_refctd_ptr<ISystem>&& system) override
+    {
         // Remember to call the base class initialization!
-        if (!base_t::onAppInitialized(core::smart_refctd_ptr(system))) {
+        if (!base_t::onAppInitialized(core::smart_refctd_ptr(system)))
             return false;
-        }
-        if (!asset_base_t::onAppInitialized(std::move(system))) {
+        if (!asset_base_t::onAppInitialized(std::move(system)))
             return false;
-        }
 
         m_imageLoadedSemaphore = m_device->createSemaphore(0);
         loadImage();
@@ -190,7 +189,7 @@ public:
         pplnLayout->setObjectDebugName("Box Blur PPLN Layout");
 
         IQueue* queue = getComputeQueue();
-
+#if 0 /// code here causes DEVICE_lOST
         IImage::SSubresourceLayers subresourceLayers;
         subresourceLayers.aspectMask = IImage::E_ASPECT_FLAGS::EAF_COLOR_BIT;
         subresourceLayers.mipLevel = 0u;
@@ -489,7 +488,7 @@ public:
         // `outputBufferAllocation.memory` gets dropped by its last reference and
         // its destructor runs.
         outputBufferAllocation.memory->unmap();
-
+#endif
         return true;
     }
 
@@ -502,14 +501,12 @@ public:
 
         // intialize command buffers
         core::smart_refctd_ptr<nbl::video::IGPUCommandBuffer> commandBuffer;
-        m_device->createCommandPool(
-            transferUpQueue->getFamilyIndex(),
-            IGPUCommandPool::CREATE_FLAGS::RESET_COMMAND_BUFFER_BIT
-        )->createCommandBuffers(IGPUCommandPool::BUFFER_LEVEL::PRIMARY, 1, &commandBuffer, core::smart_refctd_ptr(m_logger));
+        m_device->createCommandPool(transferUpQueue->getFamilyIndex(),IGPUCommandPool::CREATE_FLAGS::RESET_COMMAND_BUFFER_BIT)->createCommandBuffers(IGPUCommandPool::BUFFER_LEVEL::PRIMARY,1,&commandBuffer,core::smart_refctd_ptr(m_logger));
+        commandBuffer->setObjectDebugName("Upload Command Buffer");
         //
-        IQueue::SSubmitInfo::SCommandBufferInfo commandBufferInfo;
-            commandBuffer->setObjectDebugName("Upload Command Buffer");
-            commandBufferInfo.cmdbuf = commandBuffer.get();
+        IQueue::SSubmitInfo::SCommandBufferInfo commandBufferInfo = {
+            .cmdbuf = commandBuffer.get()
+        };
 
         core::smart_refctd_ptr<ISemaphore> imgFillSemaphore = m_device->createSemaphore(0);
         imgFillSemaphore->setObjectDebugName("Image Fill Semaphore");
@@ -538,7 +535,6 @@ public:
 
             std::vector<uint32_t> familyIndices;
         } inputs = {};
-        inputs.readCache = converter.get();
         inputs.logger = m_logger.get();
         {
             const core::set<uint32_t> uniqueFamilyIndices = { getTransferUpQueue()->getFamilyIndex(), getComputeQueue()->getFamilyIndex() };
@@ -568,14 +564,15 @@ public:
         const auto imagePathToLoad = "../app_resources/tex.jpg";
 
         SAssetBundle bundle = m_assetMgr->getAsset(imagePathToLoad, lp);
-        if (bundle.getContents().empty()) {
+        if (bundle.getContents().empty())
+        {
             m_logger->log("Couldn't load an asset.", ILogger::ELL_ERROR);
             std::exit(-1);
         }
 
         auto cpuImage = IAsset::castDown<ICPUImage>(bundle.getContents()[0]);
-        cpuImage->addImageUsageFlags(ICPUImage::E_USAGE_FLAGS::EUF_STORAGE_BIT | ICPUImage::E_USAGE_FLAGS::EUF_TRANSFER_SRC_BIT);
-        if (!cpuImage) {
+        if (!cpuImage)
+        {
             m_logger->log("Failed to load image from path %s", ILogger::ELL_ERROR, imagePathToLoad);
             std::exit(-1);
         }
@@ -586,18 +583,15 @@ public:
         auto reservation = converter->reserve(inputs);
         // the `.value` is just a funny way to make the `smart_refctd_ptr` copyable
         m_image = reservation.getGPUObjects<ICPUImage>().front().value;
-        if (!m_image) {
+        if (!m_image)
+        {
             m_logger->log("Failed to convert %s into an IGPUImage handle", ILogger::ELL_ERROR, imagePathToLoad);
             std::exit(-1);
         }
 
-        // debug log about overflows
-        transfer.overflowCallback = [&](const ISemaphore::SWaitInfo&)->void
-            {
-                m_logger->log("Overflown when uploading image nr!\n", ILogger::ELL_PERFORMANCE);
-            };
         // we want our converter's submit to signal a semaphore that image contents are ready
-        const IQueue::SSubmitInfo::SSemaphoreInfo signalSemaphore = {
+        const IQueue::SSubmitInfo::SSemaphoreInfo signalSemaphore =
+        {
                 .semaphore = m_imageLoadedSemaphore.get(),
                 .value = 1u,
                 // cannot signal from COPY stage because there's a layout transition and a possible ownership transfer
@@ -609,11 +603,11 @@ public:
         transferUpQueue->startCapture();
         auto result = reservation.convert(params);
         transferUpQueue->endCapture();
-        if (!result.blocking() && result.copy() != IQueue::RESULT::SUCCESS) {
+        if (!result.blocking() && result.copy() != IQueue::RESULT::SUCCESS)
+        {
             m_logger->log("Failed to record or submit conversions");
             std::exit(-1);
         }
-
     }
 
     // Platforms like WASM expect the main entry point to periodically return
