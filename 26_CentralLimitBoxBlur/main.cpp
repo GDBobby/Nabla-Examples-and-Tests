@@ -189,7 +189,7 @@ public:
         pplnLayout->setObjectDebugName("Box Blur PPLN Layout");
 
         IQueue* queue = getComputeQueue();
-#if 0 /// code here causes DEVICE_lOST
+#if 1 /// code here causes DEVICE_lOST
         IImage::SSubresourceLayers subresourceLayers;
         subresourceLayers.aspectMask = IImage::E_ASPECT_FLAGS::EAF_COLOR_BIT;
         subresourceLayers.mipLevel = 0u;
@@ -322,6 +322,7 @@ public:
             IShader::E_SHADER_STAGE::ESS_COMPUTE, 0,
             sizeof(pushConstData), &pushConstData);
 
+#if 0 // your dispatch is causing a DEVICE_LOST and a submit that never finished + deadlock/forever wait in the semaphore wait
         for (int j = 0; j < 1; j++) {
             cmdbuf->dispatch(
                 outImgParams.extent.width / (float)pushConstData.blockDim,
@@ -359,7 +360,7 @@ public:
             // IShader::E_SHADER_STAGE::ESS_COMPUTE, 0, sizeof( pushConstData ),
             // &pushConstData ); cmdbuf->dispatch(1, outImgParams.extent.width, 1);
         }
-
+#endif
         const IGPUCommandBuffer::SImageMemoryBarrier<
             IGPUCommandBuffer::SOwnershipTransferBarrier>
             barriers2[] = { {
