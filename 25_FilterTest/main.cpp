@@ -145,7 +145,7 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 		class CBlitImageFilterTest : public ITest
 		{
 				using blit_utils_t = BlitUtilities;
-				using convolution_kernels_t = typename blit_utils_t::convolution_kernels_t;
+				using convolution_kernels_t = typename blit_utils_t::ConvolutionKernels;
 
 			public:
 				CBlitImageFilterTest(
@@ -309,7 +309,7 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 		class CComputeBlitTest : public ITest
 		{
 				using blit_utils_t = BlitUtilities;
-				using convolution_kernels_t = typename blit_utils_t::convolution_kernels_t;
+				using convolution_kernels_t = typename blit_utils_t::ConvolutionKernels;
 
 			public:
 				CComputeBlitTest(
@@ -805,12 +805,12 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 				}
 
 			private:
-				const std::string									m_outputName;
-				const typename blit_utils_t::convolution_kernels_t	m_convolutionKernels;
-				const hlsl::uint32_t3								m_outImageDim;
-				const IBlitUtilities::E_ALPHA_SEMANTIC				m_alphaSemantic;
-				const float											m_referenceAlpha = 0.f;
-				const uint32_t										m_alphaBinCount = asset::IBlitUtilities::DefaultAlphaBinCount;
+				const std::string						m_outputName;
+				const convolution_kernels_t				m_convolutionKernels;
+				const hlsl::uint32_t3					m_outImageDim;
+				const IBlitUtilities::E_ALPHA_SEMANTIC	m_alphaSemantic;
+				const float								m_referenceAlpha = 0.f;
+				const uint32_t							m_alphaBinCount = asset::IBlitUtilities::DefaultAlphaBinCount;
 		};
 
 		class CRegionBlockFunctorFilterTest : public ITest
@@ -954,7 +954,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 
 						using BlitUtilities = CBlitUtilities<CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SMitchellFunction<>>, CWeightFunction1D<SMitchellFunction<>>>>>;
 
-						auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SMitchellFunction<>>>({inExtent.width,inExtent.height,inExtent.depth},outImageDim);
+						BlitUtilities::ConvolutionKernels convolutionKernels = {};
+						BlitUtilities::rescaleKernels(convolutionKernels,{inExtent.width,inExtent.height,inExtent.depth},outImageDim);
 
 						tests[0] = std::make_unique<CBlitImageFilterTest<BlitUtilities>>
 						(
@@ -981,7 +982,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 						
 						const auto& inExtent = inImage->getCreationParameters().extent;
 						const hlsl::uint32_t3 outImageDim(inExtent.width*2, inExtent.height*4, 1);
-						auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SKaiserFunction>>({inExtent.width,inExtent.height,inExtent.depth},outImageDim);
+						BlitUtilities::ConvolutionKernels convolutionKernels = {};
+						BlitUtilities::rescaleKernels(convolutionKernels,{inExtent.width,inExtent.height,inExtent.depth},outImageDim);
 
 						const auto outImageFormat = asset::EF_R32G32B32A32_SFLOAT;
 						tests[1] = std::make_unique<CBlitImageFilterTest<BlitUtilities>>
@@ -1144,21 +1146,27 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 					auto inImage = createCPUImage(inImageDim,layerCount,IImage::ET_1D,EF_R32_SFLOAT,true);
 					assert(inImage);
 
-					auto reconstructionX = asset::CWeightFunction1D<asset::SMitchellFunction<>>();
+					using Reconstruction = CWeightFunction1D<SMitchellFunction<>>;
+					Reconstruction reconstructionX = {};
 					reconstructionX.stretchAndScale(0.35f);
 
-					auto resamplingX = asset::CWeightFunction1D<asset::SMitchellFunction<>>();
+					using Resampling = CWeightFunction1D<SMitchellFunction<>>;
+					Resampling resamplingX = {};
 					resamplingX.stretchAndScale(0.35f);
+					
+					using ChannelKernel = CConvolutionWeightFunction1D<Reconstruction,Resampling>;
+					const ChannelKernel combinedX(reconstructionX,resamplingX);
 
+					using Kernel = CDefaultChannelIndependentWeightFunction1D<ChannelKernel>;
 					using LutDataType = hlsl::float16_t;
-					using BlitUtilities = CBlitUtilities<
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SMitchellFunction<>>, CWeightFunction1D<SMitchellFunction<>>>>,
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SMitchellFunction<>>, CWeightFunction1D<SMitchellFunction<>>>>,
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SMitchellFunction<>>, CWeightFunction1D<SMitchellFunction<>>>>,
-						LutDataType>;
+					using BlitUtilities = CBlitUtilities<Kernel,Kernel,Kernel,LutDataType>;
+
+					BlitUtilities::ConvolutionKernels convolutionKernels = {
+						/*.x = */Kernel(combinedX,combinedX,combinedX,combinedX)
+					};
 
 					const hlsl::uint32_t3 outImageDim(800u, 1u, 1u);
-					auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SMitchellFunction<>>>(inImageDim, outImageDim, std::move(reconstructionX), std::move(resamplingX));
+					BlitUtilities::rescaleKernels(convolutionKernels,inImageDim,outImageDim);
 
 					tests[0] = std::make_unique<CComputeBlitTest<BlitUtilities>>
 					(
@@ -1186,7 +1194,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 						
 						const auto& inExtent = inImage->getCreationParameters().extent;
 						const hlsl::uint32_t3 outImageDim(inExtent.width / 3u, inExtent.height / 7u, inExtent.depth);
-						auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SKaiserFunction>>({inExtent.width,inExtent.height,inExtent.depth},outImageDim);
+						BlitUtilities::ConvolutionKernels convolutionKernels = {};
+						BlitUtilities::rescaleKernels(convolutionKernels,{inExtent.width,inExtent.height,inExtent.depth},outImageDim);
 
 						tests[1] = std::make_unique<CComputeBlitTest<BlitUtilities>>
 						(
@@ -1208,26 +1217,32 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 					auto inImage = createCPUImage(inImageDim,layerCount,inImageType,inImageFormat,true);
 					assert(inImage);
 
-					auto reconstructionX = asset::CWeightFunction1D<asset::SBoxFunction>();
+					using Reconstruction = CWeightFunction1D<SBoxFunction>;
+					Reconstruction reconstructionX,reconstructionY;
 					reconstructionX.stretchAndScale(0.35f);
-					auto resamplingX = asset::CWeightFunction1D<asset::SBoxFunction>();
-					resamplingX.stretchAndScale(0.35f);
+					reconstructionY.stretchAndScale(9.f / 16.f);
 
-					auto reconstructionY = asset::CWeightFunction1D<asset::SBoxFunction>();
-					reconstructionY.stretchAndScale(9.f/16.f);
-					auto resamplingY = asset::CWeightFunction1D<asset::SBoxFunction>();
-					resamplingY.stretchAndScale(9.f/16.f);
+					using Resampling = CWeightFunction1D<SBoxFunction>;
+					Resampling resamplingX,resamplingY;
+					resamplingX.stretchAndScale(0.35f);
+					resamplingY.stretchAndScale(9.f / 16.f);
+
+					using ChannelKernel = CConvolutionWeightFunction1D<Reconstruction,Resampling>;
+					ChannelKernel combinedX(reconstructionX,resamplingX);
+					ChannelKernel combinedY(reconstructionY,resamplingY);
+
+					using Kernel = CDefaultChannelIndependentWeightFunction1D<ChannelKernel>;
 
 					using LutDataType = hlsl::float16_t;
-					using BlitUtilities = CBlitUtilities<
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SBoxFunction>, CWeightFunction1D<SBoxFunction>>>,
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SBoxFunction>, CWeightFunction1D<SBoxFunction>>>,
-						CDefaultChannelIndependentWeightFunction1D<CConvolutionWeightFunction1D<CWeightFunction1D<SBoxFunction>, CWeightFunction1D<SBoxFunction>>>,
-						LutDataType
-					>;
+					using BlitUtilities = CBlitUtilities<Kernel,Kernel,Kernel,LutDataType>;
+					
+					BlitUtilities::ConvolutionKernels convolutionKernels = {
+						/*.x = */Kernel(combinedX,combinedX,combinedX,combinedX),
+						/*.y = */Kernel(combinedY,combinedY,combinedY,combinedY)
+					};
 
 					const hlsl::uint32_t3 outImageDim(3, 4, 2);
-					auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SBoxFunction>>(inImageDim, outImageDim, std::move(reconstructionX), std::move(resamplingX), std::move(reconstructionY), std::move(resamplingY));
+					BlitUtilities::rescaleKernels(convolutionKernels,inImageDim,outImageDim);
 
 					tests[2] = std::make_unique<CComputeBlitTest<BlitUtilities>>
 					(
@@ -1260,7 +1275,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 						>;
 
 						const hlsl::uint32_t3 outImageDim(inExtent.width/3,inExtent.height/7,inExtent.depth);
-						auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SMitchellFunction<>>>({inExtent.width,inExtent.height,inExtent.depth},outImageDim);
+						BlitUtilities::ConvolutionKernels convolutionKernels = {};
+						BlitUtilities::rescaleKernels(convolutionKernels,{inExtent.width,inExtent.height,inExtent.depth},outImageDim);
 
 						tests[3] = std::make_unique<CComputeBlitTest<BlitUtilities>>
 						(
@@ -1294,7 +1310,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 					>;
 
 					const hlsl::uint32_t3 outImageDim(256,128,64);
-					auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SMitchellFunction<>>>(inImageDim, outImageDim);
+					BlitUtilities::ConvolutionKernels convolutionKernels = {};
+					BlitUtilities::rescaleKernels(convolutionKernels,inImageDim, outImageDim);
 
 					tests[4] = std::make_unique<CComputeBlitTest<BlitUtilities>>
 					(
@@ -1324,7 +1341,8 @@ class BlitFilterTestApp final : public virtual application_templates::MonoDevice
 					>;
 
 					const hlsl::uint32_t3 outImageDim(512, 257, 1);
-					auto convolutionKernels = BlitUtilities::getConvolutionKernels<CWeightFunction1D<SMitchellFunction<>>>(inImageDim, outImageDim);
+					BlitUtilities::ConvolutionKernels convolutionKernels = {};
+					BlitUtilities::rescaleKernels(convolutionKernels,inImageDim,outImageDim);
 
 					const IBlitUtilities::E_ALPHA_SEMANTIC alphaSemantic = IBlitUtilities::EAS_REFERENCE_OR_COVERAGE;
 					const float referenceAlpha = 0.5f;
