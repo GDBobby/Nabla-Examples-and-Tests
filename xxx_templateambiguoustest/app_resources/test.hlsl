@@ -25,7 +25,7 @@ struct SHLSLThing
 
 // weird observation:
 // if this struct is commented out, then only one compile error on line 17 as expected
-// if this struct is compiled as well (not commented out), then only two compile errors on line 32 + 33, no error on line 17
+// if this struct is compiled as well (not commented out), then only two compile errors on line 34 + 35, no error on line 19
 struct SAnotherThing
 {
     static SAnotherThing create(NBL_CONST_REF_ARG(float32_t3) N, NBL_CONST_REF_ARG(float32_t3) V)
