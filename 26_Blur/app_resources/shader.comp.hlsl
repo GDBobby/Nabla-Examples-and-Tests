@@ -34,6 +34,7 @@ struct BoxBlur // TODO: rename to `Blur1D`, take an extra `typename Sampler`
 
     void operator()(NBL_REF_ARG(DataAccessor) data, NBL_REF_ARG(SharedAccessor) scratch, const uint16_t channel)
     {
+        const uint16_t ScanScratchSize = _static_cast<uint16_t>(workgroup::scratch_size_arithmetic<WorkgroupSize,device_capabilities_traits<device_capabilities>::maxSubgroupSize>::value);
         const uint16_t end = data.linearSize();
         const uint16_t localInvocationIndex = workgroup::SubgroupContiguousIndex();
 
@@ -53,17 +54,18 @@ struct BoxBlur // TODO: rename to `Blur1D`, take an extra `typename Sampler`
             // need to copy-in / copy-out the accessor cause no references in HLSL - yay!
             OffsetSharedAccessor offsetScratch;
             offsetScratch.base = scratch;
-            offsetScratch.offset = end-_static_cast<uint16_t>(workgroup::scratch_size_arithmetic<WorkgroupSize>::value);
+            offsetScratch.offset = SharedAccessor::Size-ScanScratchSize;
             const float32_t sum = workgroup::inclusive_scan<plus<float32_t>,WorkgroupSize,device_capabilities>::template __call(input,offsetScratch);
             scratch = offsetScratch.base;
             // loop increment
             baseIx += WorkgroupSize;
             // if doing the last prefix sum, we need to barrier to stop aliasing of temporary scratch for `inclusive_scan` and our scanline
             // TODO: might be worth adding a non-aliased mode as NSight says nr 1 hotspot is barrier waiting in this code
-            if (baseIx>=end)
+            if (end+ScanScratchSize>SharedAccessor::Size)
                 scratch.workgroupExecutionAndMemoryBarrier();
             // save prefix sum results
-            scratch.template set<float32_t>(ix,sum);
+            if (ix<end)
+                scratch.template set<float32_t>(ix,sum);
             // previous prefix sum must have finished before we ask for results
             scratch.workgroupExecutionAndMemoryBarrier();
         }
@@ -73,14 +75,14 @@ struct BoxBlur // TODO: rename to `Blur1D`, take an extra `typename Sampler`
         {
             const float u = ix;
             // identity transform
-            const float32_t normalizationFactor = 1.f;
-            const float right = scratch.template get<float32_t,int32_t>(u);
-            const float left = u!=0 ? scratch.template get<float32_t,int32_t>(u-1):0.f;
+//            const float32_t normalizationFactor = 1.f;
+//            const float right = scratch.template get<float32_t,int32_t>(u);
+//            const float left = u!=0 ? scratch.template get<float32_t,int32_t>(u-1):0.f;
             // Exercercise for reader do the start-end taps with bilinear interpolation
             // TODO: pass as push constant
-//            const float32_t normalizationFactor = 1.f/(2.f*radius+1.f);
-//            const float right = scratch.template get<float32_t,int32_t>(clamp(u+radius,0.f,last));
-//            const float left = scratch.template get<float32_t,int32_t>(clamp(u-radius,0.f,last));
+            const float32_t normalizationFactor = 1.f/(2.f*radius+1.f);
+            const float right = scratch.template get<float32_t,int32_t>(clamp(u+radius,0.f,last));
+            const float left = scratch.template get<float32_t,int32_t>(clamp(u-radius,0.f,last));
             data.template set<float32_t>(channel,ix,(right-left)*normalizationFactor);
         }
     }
@@ -280,6 +282,8 @@ groupshared uint32_t smem[MAX_SCANLINE];
 
 struct SharedMemoryProxy
 {
+    NBL_CONSTEXPR uint16_t Size = MAX_SCANLINE;
+
     // these get used by BoxBlur
     template<typename T, typename I=uint16_t>
 	enable_if_t<sizeof(T)==sizeof(uint32_t),T> get(const I idx)
